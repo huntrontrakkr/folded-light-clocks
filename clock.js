@@ -419,11 +419,16 @@ async function main() {
   try { viewer = new Viewer(canvas); } catch (e) { status.textContent = e.message; return; }
   const params = new URLSearchParams(location.search);
   let name = params.get("clock") in CLOCKS ? params.get("clock") : ORDER[0];
+  // the displayed time: live, unless ?at= fixes a start; "an hour a minute" runs fast from the moment it is switched on
   let speed = Number(params.get("speed")) || 1;              // ?speed=60: an hour a minute
-  const t0 = Date.now(), base = params.get("at") ? new Date(params.get("at")) : null;
-  const now = () => {
-    const real = Date.now();
-    return new Date((base ? base.getTime() : t0) + (real - t0) * speed);
+  const fixed = params.get("at") ? new Date(params.get("at")) : null;
+  let anchorShown = fixed ? fixed.getTime() : Date.now(), anchorReal = Date.now();
+  const now = () => new Date(anchorShown + (Date.now() - anchorReal) * speed);
+  const setSpeed = v => {
+    const shown = now().getTime();
+    speed = v;
+    anchorReal = Date.now();
+    anchorShown = (v === 1 && !fixed) ? anchorReal : shown;   // back to live time when fast mode ends
   };
 
   const nav = document.getElementById("clocks");
@@ -443,9 +448,24 @@ async function main() {
     sound.setMode(m);
     soundBtn.textContent = LABEL[m];
     soundBtn.classList.toggle("on", m !== "off");
+    soundBtn.blur();
   };
   const fast = document.getElementById("fast");
-  fast.onclick = () => { speed = speed === 1 ? 60 : 1; fast.classList.toggle("on", speed !== 1); };
+  fast.onclick = () => { setSpeed(speed === 1 ? 60 : 1); fast.classList.toggle("on", speed !== 1); fast.blur(); };
+  if (speed !== 1) fast.classList.add("on");
+
+  // full screen: nothing but the clock face. Tap the face or "full screen"; tap again or Escape to leave.
+  const bare = on => {
+    document.body.classList.toggle("bare", on);
+    if (on && document.documentElement.requestFullscreen && !document.fullscreenElement)
+      document.documentElement.requestFullscreen().catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    resize();
+  };
+  document.getElementById("full").onclick = () => bare(true);
+  canvas.addEventListener("click", () => bare(!document.body.classList.contains("bare")));
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && document.body.classList.contains("bare")) bare(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") bare(false); if (e.key === "f") bare(!document.body.classList.contains("bare")); });
 
   async function select(key) {
     name = key;
@@ -463,7 +483,8 @@ async function main() {
 
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const size = Math.floor(Math.min(window.innerWidth, window.innerHeight * 0.86));
+    const full = document.body.classList.contains("bare");
+    const size = Math.floor(full ? Math.min(window.innerWidth, window.innerHeight) : Math.min(window.innerWidth, window.innerHeight * 0.86));
     canvas.style.width = canvas.style.height = `${size}px`;
     canvas.width = canvas.height = Math.floor(size * dpr);
   }

@@ -17,7 +17,8 @@ nav { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; gap: 4
 .links { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
 button, a { font: inherit; color: var(--dim); background: none; border: none; padding: 2px 0; cursor: pointer; text-decoration: none;
             transition: color 0.6s; }
-button:hover, a:hover, button.on { color: var(--ink); }
+button.on { color: var(--ink); }
+@media (hover: hover) { button:hover, a:hover { color: var(--ink); } }
 #about { position: fixed; inset: 0; background: rgba(7, 7, 8, 0.92); display: flex; flex-direction: column; justify-content: center;
          align-items: center; padding: 10vh 12vw; }
 #about[hidden] { display: none; }
@@ -29,3 +30,9 @@ button:hover, a:hover, button.on { color: var(--ink); }
   nav { grid-row: 2; } .links { grid-row: 2; grid-column: 2; }
 }
 [hidden] { display: none !important; }
+
+/* full screen: nothing but the clock face */
+header, footer, #time { transition: opacity 0.8s; }
+body.bare header, body.bare footer, body.bare #time, body.bare #status { opacity: 0; pointer-events: none; }
+body.bare { cursor: none; }
+canvas { cursor: pointer; -webkit-tap-highlight-color: transparent; }
