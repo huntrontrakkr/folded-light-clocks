@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clocks of folded light</title>
+<meta name="description" content="Three clocks that keep time in caustics: light from one LED, folded by turning plates of clear acrylic into a different picture each hour. Traced live in your browser.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div id="title">Folded Light</div>
+  <div id="sub"></div>
+</header>
+<main>
+  <canvas id="wall" aria-label="The clock's light on the wall, traced live"></canvas>
+  <div id="status"></div>
+</main>
+<footer>
+  <div id="now"></div>
+  <div id="time"></div>
+  <nav id="clocks"></nav>
+  <div class="links">
+    <a id="film" href="#" target="_blank" rel="noopener">Watch the film</a>
+    <button id="fast" title="Let an hour pass in a minute">an hour a minute</button>
+    <button id="aboutbtn">about</button>
+  </div>
+</footer>
+<aside id="about" hidden>
+  <p>One small LED shines through a stack of clear acrylic plates. Each plate carries a gentle relief, less than two
+  millimetres deep. As the plates turn, the light they bend gathers into a picture on the wall: on the hour (or the
+  double-hour) it holds still for a minute and a half, then the plates move on one after another, the picture melts,
+  and the light wanders until the next one gathers.</p>
+  <p>What you see is the light of the designed plates, traced live in your browser: rays from a 1&nbsp;mm white LED,
+  through the plates at the angles the clock's motors hold at this moment. It is a simulation, faithful to the exact
+  optical model of the designs to a correlation of 0.99; the clocks themselves are still being built.</p>
+  <p>The minute is the slim mark outside the picture; the seconds walk round the ring of dots.</p>
+  <button id="aboutclose">close</button>
+</aside>
+<script src="clock.js"></script>
+<script>
+  const about = document.getElementById("about");
+  document.getElementById("aboutbtn").onclick = () => { about.hidden = false; };
+  document.getElementById("aboutclose").onclick = () => { about.hidden = true; };
+</script>
+</body>
+</html>
