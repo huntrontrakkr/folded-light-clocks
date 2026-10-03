@@ -22,6 +22,7 @@
   <nav id="clocks"></nav>
   <div class="links">
     <a id="film" href="#" target="_blank" rel="noopener">Watch the film</a>
+    <button id="sound" title="Off, an ambient score, or the light itself as sound">sound: off</button>
     <button id="fast" title="Let an hour pass in a minute">an hour a minute</button>
     <button id="aboutbtn">about</button>
   </div>
@@ -35,8 +36,14 @@
   through the plates at the angles the clock's motors hold at this moment. It is a simulation, faithful to the exact
   optical model of the designs to a correlation of 0.99; the clocks themselves are still being built.</p>
   <p>The minute is the slim mark outside the picture; the seconds walk round the ring of dots.</p>
+  <p><em>Sound.</em> "Ambient" is a generative score from the films' instruments: slow phrases on cycles that never
+  line up the same way twice, and a bell as each picture gathers. "The light" turns the light itself into sound:
+  twenty-four voices each carry an equal share of it, pitched by how high on the wall that share falls, as if the light were a spectrogram. As the light
+  moves the voices glide by the shortest path, the same optimal transport that shaped the plates, and the loudness
+  never changes, because no light is lost. When the picture stands still, they settle into its chord.</p>
   <button id="aboutclose">close</button>
 </aside>
+<script src="sound.js"></script>
 <script src="clock.js"></script>
 <script>
   const about = document.getElementById("about");

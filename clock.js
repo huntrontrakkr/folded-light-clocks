@@ -193,6 +193,13 @@ void main() {
   o = vec4(srgb(x) * uFade * edge, 1.0);
 }`;
 
+// a small luminance image of the light (no marks), read back for the sound
+const PROBE_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uHist; uniform float uRef;
+in vec2 vUv; out vec4 o;
+void main() { float l = dot(texture(uHist, vUv).rgb, vec3(0.2126, 0.7152, 0.0722)); o = vec4(vec3(clamp(0.25 * l / uRef, 0.0, 1.0)), 1.0); }`;
+
 function compile(gl, vs, fs) {
   const mk = (type, src) => {
     const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -242,12 +249,13 @@ class Viewer {
     this.avg = compile(gl, QUAD_VS, AVG_FS);
     this.grade = compile(gl, QUAD_VS, GRADE_FS);
     this.show = compile(gl, QUAD_VS, SHOW_FS);
+    this.probe = compile(gl, QUAD_VS, PROBE_FS);
     this.quad = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     this.vaoQuad = gl.createVertexArray();
     gl.bindVertexArray(this.vaoQuad);
-    for (const prog of [this.avg, this.grade, this.show]) {
+    for (const prog of [this.avg, this.grade, this.show, this.probe]) {
       const loc = gl.getAttribLocation(prog.p, "aPos");
       gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
     }
@@ -256,6 +264,15 @@ class Viewer {
     this.fresh = target(gl, this.S, false);
     this.hist = [target(gl, this.S, false), target(gl, this.S, false)];
     this.graded = target(gl, this.S, true);
+    this.PS = 48;                                          // probe resolution
+    const pt = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, pt);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, this.PS, this.PS);
+    this.probeFb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.probeFb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, pt, 0);
+    this.probePixels = new Uint8Array(this.PS * this.PS * 4);
+    this.lastHist = null;
     this.rays = 400000;
     this.frame = 0;
     this.fade = 0;
@@ -324,6 +341,7 @@ class Viewer {
     const alpha = this.frame < 40 ? 1 / (this.frame + 1) : 0.05;   // settle quickly after loading
     gl.uniform1f(this.avg.u.uNorm, norm); gl.uniform1f(this.avg.u.uAlpha, alpha);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    this.lastHist = dst;
     // 3. grade and add the marks
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.graded.fb);
     gl.useProgram(this.grade.p);
@@ -350,6 +368,37 @@ class Viewer {
     return hf;
   }
 }
+
+// the light read as a spectrum: brightness by height on the wall (60 bins, bottom to top) inside the picture,
+// counting only light above the picture's average so that the figure, not the haze, shapes the chord
+Viewer.prototype.profile = function () {
+  const gl = this.gl, c = this.clock;
+  if (!c || !this.lastHist) return null;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, this.probeFb);
+  gl.viewport(0, 0, this.PS, this.PS);
+  gl.useProgram(this.probe.p);
+  gl.bindVertexArray(this.vaoQuad);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.lastHist.t); gl.uniform1i(this.probe.u.uHist, 0);
+  gl.uniform1f(this.probe.u.uRef, c.ref);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.readPixels(0, 0, this.PS, this.PS, gl.RGBA, gl.UNSIGNED_BYTE, this.probePixels);
+  const n = this.PS, rmax = 0.47 * 1.02 / c.frame, B = 60;
+  let mean = 0, cnt = 0;
+  const inside = (i, j) => { const x = (i + 0.5) / n * 2 - 1, y = (j + 0.5) / n * 2 - 1; return x * x + y * y <= rmax * rmax; };
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (inside(i, j)) { mean += this.probePixels[4 * (j * n + i)]; cnt++; }
+  mean /= Math.max(cnt, 1);
+  const prof = new Float32Array(B);
+  for (let j = 0; j < n; j++) {
+    const yb = ((j + 0.5) / n * 2 - 1) / rmax;                       // -1 bottom of the picture .. 1 top
+    if (Math.abs(yb) >= 1) continue;
+    const b = Math.min(B - 1, Math.floor((yb + 1) / 2 * B));
+    for (let i = 0; i < n; i++) if (inside(i, j)) prof[b] += Math.max(0, this.probePixels[4 * (j * n + i)] - mean) ** 1.5;
+  }
+  let tot = 0; for (const v of prof) tot += v;
+  if (tot > 0) for (let i = 0; i < B; i++) prof[i] /= tot;
+  else prof.fill(1 / B);
+  return prof;
+};
 
 // ---------------------------------------------------------------------------------------------- the page
 function caption(name, c, hf, date) {
@@ -385,6 +434,16 @@ async function main() {
     b.onclick = () => select(key);
     nav.appendChild(b);
   }
+  const sound = new Sound();
+  window._sound = sound;
+  const soundBtn = document.getElementById("sound");
+  const MODES = ["off", "ambient", "light"], LABEL = { off: "sound: off", ambient: "sound: ambient", light: "sound: the light" };
+  soundBtn.onclick = () => {
+    const m = MODES[(MODES.indexOf(sound.mode) + 1) % MODES.length];
+    sound.setMode(m);
+    soundBtn.textContent = LABEL[m];
+    soundBtn.classList.toggle("on", m !== "off");
+  };
   const fast = document.getElementById("fast");
   fast.onclick = () => { speed = speed === 1 ? 60 : 1; fast.classList.toggle("on", speed !== 1); };
 
@@ -423,6 +482,11 @@ async function main() {
     if (quick > 60) { viewer.rays = Math.min(3000000, Math.floor(viewer.rays * 1.15)); quick = 0; }
     const d = now();
     const hf = viewer.render(d, ts / 1000);
+    if (hf !== undefined && sound.mode !== "off" && viewer.frame % 20 === 0) {
+      const k = Math.floor(hf), still = hf - k < 1e-6;
+      sound.update({ k, atPicture: still, scale: name === "twelve-keys" ? "dorian" : "in",
+                     profile: sound.mode === "light" ? viewer.profile() : null });
+    }
     if (hf !== undefined && viewer.frame % 15 === 0) {
       cap.textContent = caption(name, viewer.clock, hf, d);
       clockText.textContent = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + (speed !== 1 ? "  · an hour a minute" : "");
