@@ -29,6 +29,8 @@
   </div>
 </footer>
 <aside id="about" hidden>
+  <button id="aboutclose" aria-label="Close">close</button>
+  <div class="about-in">
   <p>One small LED shines through a stack of clear acrylic plates. Each plate carries a gentle relief, less than two
   millimetres deep. As the plates turn, the light they bend gathers into a picture on the wall: on the hour (or the
   double-hour) it holds still for a minute and a half, then the plates move on one after another, the picture melts,
@@ -43,7 +45,7 @@
   twenty-four voices each carry an equal share of it, pitched by how high on the wall that share falls, as if the light were a spectrogram. As the light
   moves the voices glide by the shortest path, the same optimal transport that shaped the plates, and the loudness
   never changes, because no light is lost. When the picture stands still, they settle into its chord.</p>
-  <button id="aboutclose">close</button>
+  </div>
 </aside>
 <script src="sound.js"></script>
 <script src="clock.js"></script>
@@ -51,6 +53,8 @@
   const about = document.getElementById("about");
   document.getElementById("aboutbtn").onclick = () => { about.hidden = false; };
   document.getElementById("aboutclose").onclick = () => { about.hidden = true; };
+  about.addEventListener("click", e => { if (e.target === about) about.hidden = true; });          // tap outside the text
+  document.addEventListener("keydown", e => { if (e.key === "Escape") about.hidden = true; });
 </script>
 </body>
 </html>
