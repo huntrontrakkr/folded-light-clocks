@@ -13,12 +13,13 @@
 const CLOCKS = {
   "netsuke": { title: "Folded Light", sub: "second edition · the twelve double-hours as netsuke",
                film: null, filmTitle: "Folded Light (second edition)" },
+  "minute-clock": { title: "The Minute Clock", sub: "a new number every minute · the same eight plates", film: null, filmTitle: "The Minute Clock" },
   "folded-light": { title: "Folded Light", sub: "first edition · the twelve double-hours as woodcuts",
                     film: null, filmTitle: "Folded Light (first edition)" },
   "twelve-keys": { title: "The Twelve Keys", sub: "the Great Work, one key each hour",
                    film: null, filmTitle: "The Twelve Keys" },
 };
-const ORDER = ["netsuke", "twelve-keys", "folded-light"];
+const ORDER = ["netsuke", "twelve-keys", "minute-clock", "folded-light"];
 const ANIMAL = { ox: "the Ox", tiger: "the Tiger", rabbit: "the Rabbit", dragon: "the Dragon", snake: "the Snake",
                  horse: "the Horse", goat: "the Goat", monkey: "the Monkey", rooster: "the Rooster", dog: "the Dog",
                  boar: "the Boar", rat: "the Rat" };
@@ -28,7 +29,7 @@ const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI"
 // The drive (caustix.projector.Drive): each picture stands still for dwell_s from the start of its period, then the
 // plates accelerate over blend_s, cruise, and decelerate into the next picture.
 function progress(tau, c) {
-  const T = c.hpp * 3600 - c.dwell_s, e = Math.min(c.blend_s, T / 2);
+  const T = (c.period || c.hpp * 3600) - c.dwell_s, e = Math.min(c.blend_s, T / 2);
   tau = Math.min(Math.max(tau, 0), T);
   const v = 1 / (T - e);
   if (tau < e) return 0.5 * v * tau * tau / e;
@@ -36,8 +37,12 @@ function progress(tau, c) {
   return 1 - 0.5 * v * (T - tau) * (T - tau) / e;
 }
 function hourFloat(t, c) {          // t: drive seconds; 0 = 01:00, when the first picture begins
-  const P = c.hpp * 3600, h = Math.floor(t / P);
+  const P = c.period || c.hpp * 3600, h = Math.floor(t / P);
   return h + progress(t - h * P - c.dwell_s, c);
+}
+function minuteDriveTime(date) {    // the minute clock: number n gathers at the top of minute n (60 at :00)
+  const m = date.getMinutes(), s = date.getSeconds() + date.getMilliseconds() / 1000;
+  return ((m - 1 + 60) % 60) * 60 + s;
 }
 function driveTime(date) {          // caustix film: clock(h, m, s) = ((h - 1) % 24) * 3600 + m * 60 + s
   const h = date.getHours(), m = date.getMinutes(), s = date.getSeconds() + date.getMilliseconds() / 1000;
@@ -305,7 +310,7 @@ class Viewer {
   render(date, wallSeconds) {
     const gl = this.gl, c = this.clock;
     if (!c) return;
-    const t = driveTime(date);
+    const t = c.minute ? minuteDriveTime(date) : driveTime(date);
     const hf = hourFloat(t, c);
     const th = plateAngles(hf, c);
     // 1. trace this frame's rays
@@ -407,6 +412,7 @@ function caption(name, c, hf, date) {
     const l = c.labels[mod(i, K)];
     return name === "twelve-keys" ? `Key ${ROMAN[mod(i, K)]}` : ANIMAL[l] || l;
   };
+  if (c.minute) return s < 1e-6 ? label(k) : `between ${label(k)} and ${label(k + 1)}`;
   const hourOf = i => name === "twelve-keys" ? `${mod(i, K) + 1} o'clock` : `${String((1 + 2 * mod(i, K)) % 24).padStart(2, "0")}:00`;
   if (s < 1e-6) return `${label(k)[0].toUpperCase() + label(k).slice(1)} · ${hourOf(k)}`;
   return `between ${label(k)} and ${label(k + 1)}`;

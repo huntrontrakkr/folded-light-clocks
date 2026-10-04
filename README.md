@@ -1,6 +1,6 @@
 # Clocks of folded light
 
-Three clocks that keep time in caustics, traced live in the browser: light from one LED, folded by turning plates
+Four clocks that keep time in caustics, traced live in the browser: light from one LED, folded by turning plates
 of clear acrylic into a different picture each hour (Folded Light, second and first editions) or each hour of a
 twelve-hour dial (The Twelve Keys).
 
@@ -9,4 +9,4 @@ twelve-hour dial (The Twelve Keys).
   design repository by `tools/web_export.py`.
 - Film links: set `film` in `CLOCKS` at the top of `clock.js` to a YouTube URL.
 
-URL options: `?clock=netsuke|twelve-keys|folded-light`, `&speed=60` (an hour a minute), `&at=2026-10-03T11:00:30`.
+URL options: `?clock=netsuke|twelve-keys|minute-clock|folded-light`, `&speed=60` (an hour a minute), `&at=2026-10-03T11:00:30`.
