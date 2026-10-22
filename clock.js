@@ -13,13 +13,15 @@
 const CLOCKS = {
   "netsuke": { title: "Folded Light", sub: "second edition · the twelve double-hours as netsuke",
                film: null, filmTitle: "Folded Light (second edition)" },
+  "toki": { title: "Toki", sub: "the netsuke in Edo sun time · six hours of day, six of night, rung by the bells",
+            film: null, filmTitle: "Folded Light (second edition)", data: "netsuke", toki: true },
   "minute-clock": { title: "The Minute Clock", sub: "a new number every minute · the same eight plates", film: null, filmTitle: "The Minute Clock" },
   "folded-light": { title: "Folded Light", sub: "first edition · the twelve double-hours as woodcuts",
                     film: null, filmTitle: "Folded Light (first edition)" },
   "twelve-keys": { title: "The Twelve Keys", sub: "the Great Work, one key each hour",
                    film: null, filmTitle: "The Twelve Keys" },
 };
-const ORDER = ["netsuke", "twelve-keys", "minute-clock", "folded-light"];
+const ORDER = ["netsuke", "toki", "twelve-keys", "minute-clock", "folded-light"];
 const ANIMAL = { ox: "the Ox", tiger: "the Tiger", rabbit: "the Rabbit", dragon: "the Dragon", snake: "the Snake",
                  horse: "the Horse", goat: "the Goat", monkey: "the Monkey", rooster: "the Rooster", dog: "the Dog",
                  boar: "the Boar", rat: "the Rat" };
@@ -140,6 +142,8 @@ void main() { o = mix(texture(uHist, vUv), texture(uFresh, vUv) * uNorm, uAlpha)
 const GRADE_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uHist; uniform float uRef, uContrast, uRpic, uFrame, uMinute, uSecond, uAspect;
+uniform int uMode;                                       // 0: minute and second marks; 1: the toki ring
+uniform float uB[13], uCnt[12], uCur, uLit, uSute, uBead, uIsDay;
 in vec2 vUv; out vec4 o;
 float seg(vec2 p, vec2 a, vec2 b, float w) {
   vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
@@ -150,6 +154,51 @@ void main() {
   E = uRef * pow(E / uRef, vec3(uContrast));
   vec2 p = (vUv * 2.0 - 1.0) * uFrame;                 // wall, unit coordinates, y up
   float r = length(p);
+  if (uMode == 1) {
+    // Toki: a sundial ring of light outside the picture, noon at the top and midnight at the bottom. The day arc
+    // (dawn six to dusk six) glows faintly warm; the night is dark. Twelve boundaries mark the toki, dawn and dusk
+    // longer; inside, each toki carries its bell count as small dots, which light one by one as the strokes ring;
+    // three faint quarter points; one bead for now.
+    const float RING = 1.40;
+    vec3 warm = vec3(1.0, 0.85, 0.60), ink = vec3(0.93, 0.90, 0.83), cool = vec3(0.72, 0.80, 0.96);
+    float ang = atan(p.x, p.y);
+    float a = mod(ang - uB[0], 6.2831853) + uB[0];        // in [dawn six, dawn six + 2 pi)
+    float rr = r / uRpic;
+    float onDay = step(uB[0], a) * step(a, uB[6]);
+    E += uRef * warm * 0.07 * onDay * exp(-pow((rr - RING) / 0.0045, 2.0));
+    for (int j = 0; j <= 12; j++) {
+      bool edge = (j == 0 || j == 6 || j == 12);
+      vec2 er = vec2(sin(uB[j]), cos(uB[j]));
+      float len = edge ? 0.050 : 0.026;
+      float w = seg(p, (RING - len) * uRpic * er, (RING + len) * uRpic * er, 0.0015);
+      float flash = (abs(float(j) - uCur) < 0.5) ? uSute : 0.0;
+      E += uRef * (edge ? warm : ink) * (0.20 + 1.4 * flash) * w;
+    }
+    for (int sgi = 0; sgi < 12; sgi++) {
+      float a0 = uB[sgi], a1 = uB[sgi + 1];
+      if (a < a0 - 0.06 || a > a1 + 0.06) continue;
+      float L = a1 - a0, n = uCnt[sgi];
+      float cur = (abs(float(sgi) - uCur) < 0.5) ? 1.0 : 0.0;
+      for (int i = 0; i < 9; i++) {
+        if (float(i) >= n) break;
+        float ai = a0 + (float(i) + 0.5) / n * L;
+        float d = length(p - 1.31 * uRpic * vec2(sin(ai), cos(ai)));
+        float lit = cur * clamp(uLit - float(i), 0.0, 1.0);
+        float base = sgi < 6 ? 0.12 : 0.07;               // the night's counts sit quieter than the day's
+        E += uRef * ink * (base + 0.10 * cur + 1.25 * lit) * exp(-pow(d / 0.0030, 2.0));
+      }
+      if (cur > 0.5) {                                     // quarters, only within the present toki
+        for (int q = 1; q < 4; q++) {
+          float aq = a0 + float(q) / 4.0 * L;
+          E += uRef * ink * 0.16 * exp(-pow(length(p - RING * uRpic * vec2(sin(aq), cos(aq))) / 0.0017, 2.0));
+        }
+      }
+    }
+    float db = length(p - RING * uRpic * vec2(sin(uBead), cos(uBead)));
+    E += uRef * mix(cool, warm, uIsDay) * 1.5 * exp(-pow(db / 0.0042, 2.0));
+    o = vec4(E, 1.0);
+    return;
+  }
   vec3 markCol = vec3(0.78, 0.92, 0.42);
   // seconds dial: sixty faint dots at 1.40 picture radii, the current second bright and white
   float ang = atan(p.x, p.y);                           // clockwise from 12
@@ -286,8 +335,9 @@ class Viewer {
 
   async load(name) {
     const gl = this.gl;
-    const c = await (await fetch(`data/${name}/clock.json`)).json();
-    const buf = await (await fetch(`data/${name}/slopes.f16`)).arrayBuffer();
+    const dir = (CLOCKS[name] && CLOCKS[name].data) || name;
+    const c = await (await fetch(`data/${dir}/clock.json`)).json();
+    const buf = await (await fetch(`data/${dir}/slopes.f16`)).arrayBuffer();
     c.turns = choreoTurns(c.TH, c.min_turn);
     c.cdf = []; let acc = 0;
     for (const p of c.lam_p) { acc += p; c.cdf.push(acc); }
@@ -307,11 +357,19 @@ class Viewer {
     for (const h of this.hist) { gl.bindFramebuffer(gl.FRAMEBUFFER, h.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
   }
 
-  render(date, wallSeconds) {
+  render(date, wallSeconds, toki) {
     const gl = this.gl, c = this.clock;
     if (!c) return;
-    const t = c.minute ? minuteDriveTime(date) : driveTime(date);
-    const hf = hourFloat(t, c);
+    let hf;
+    if (toki) {
+      // each animal gathers at its bell and holds, then the plates move on across a toki of whatever length the
+      // season gives (the netsuke drive, with the period set by the sun)
+      const k = c.labels.indexOf(toki.animal);
+      hf = k + progress((date.getTime() - toki.start) / 1000 - c.dwell_s, { period: toki.len / 1000, dwell_s: c.dwell_s, blend_s: c.blend_s });
+    } else {
+      const t = c.minute ? minuteDriveTime(date) : driveTime(date);
+      hf = hourFloat(t, c);
+    }
     const th = plateAngles(hf, c);
     // 1. trace this frame's rays
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fresh.fb);
@@ -356,6 +414,13 @@ class Viewer {
     gl.uniform1f(g.uFrame, c.frame);
     gl.uniform1f(g.uMinute, date.getMinutes() + date.getSeconds() / 60 + date.getMilliseconds() / 60000);
     gl.uniform1f(g.uSecond, date.getSeconds());
+    gl.uniform1i(g.uMode, toki ? 1 : 0);
+    if (toki) {
+      gl.uniform1fv(g.uB, toki.bounds);
+      gl.uniform1fv(g.uCnt, toki.counts);
+      gl.uniform1f(g.uCur, toki.seg); gl.uniform1f(g.uLit, toki.lit); gl.uniform1f(g.uSute, toki.sute);
+      gl.uniform1f(g.uBead, toki.bead); gl.uniform1f(g.uIsDay, toki.day ? 1 : 0);
+    }
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindTexture(gl.TEXTURE_2D, this.graded.t);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -418,6 +483,16 @@ function caption(name, c, hf, date) {
   return `between ${label(k)} and ${label(k + 1)}`;
 }
 
+const COUNT_WORD = { 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine" };
+const TOKI_TAG = { rabbit: "dawn six", rooster: "dusk six", horse: "noon", rat: "midnight" };
+function tokiCaption(st, hf) {
+  const still = hf - Math.floor(hf) < 1e-6;
+  const name = ANIMAL[st.animal], next = ANIMAL[st.seg < 5 ? TOKI.DAY[st.seg + 1] : st.seg === 5 ? "rooster"
+               : st.seg < 11 ? TOKI.NIGHT[st.seg - 5] : "rabbit"];
+  if (!still) return `${name[0].toUpperCase() + name.slice(1)} · moving toward ${next}`;
+  return `${name[0].toUpperCase() + name.slice(1)} · ${COUNT_WORD[st.count]} bells` + (TOKI_TAG[st.animal] ? ` · ${TOKI_TAG[st.animal]}` : "");
+}
+
 async function main() {
   const canvas = document.getElementById("wall");
   const status = document.getElementById("status");
@@ -447,11 +522,18 @@ async function main() {
   }
   const sound = new Sound();
   window._sound = sound;
+  const tokiPlace = TOKI.place(params);
+  let tokiSeg = null, bellAt = null, tokiNow = null;   // the toki last seen, and when (real time) its bells began
   const soundBtn = document.getElementById("sound");
   const MODES = ["off", "ambient", "light"], LABEL = { off: "sound: off", ambient: "sound: ambient", light: "sound: the light" };
   soundBtn.onclick = () => {
     const m = MODES[(MODES.indexOf(sound.mode) + 1) % MODES.length];
+    const was = sound.mode;
     sound.setMode(m);
+    if (was === "off" && m !== "off" && CLOCKS[name].toki && tokiNow) {   // turning the sound on rings the hour
+      sound.ringHour(tokiNow.count);
+      bellAt = performance.now();
+    }
     soundBtn.textContent = LABEL[m];
     soundBtn.classList.toggle("on", m !== "off");
     soundBtn.blur();
@@ -475,6 +557,7 @@ async function main() {
 
   async function select(key) {
     name = key;
+    tokiSeg = null; bellAt = null;
     for (const b of nav.children) b.classList.toggle("on", b.dataset.key === key);
     document.getElementById("title").textContent = CLOCKS[key].title;
     document.getElementById("sub").textContent = CLOCKS[key].sub;
@@ -508,15 +591,28 @@ async function main() {
     if (slow > 20) { viewer.rays = Math.max(100000, Math.floor(viewer.rays * 0.8)); slow = 0; }
     if (quick > 60) { viewer.rays = Math.min(3000000, Math.floor(viewer.rays * 1.15)); quick = 0; }
     const d = now();
-    const hf = viewer.render(d, ts / 1000);
+    let toki = null;
+    if (CLOCKS[name].toki) {
+      toki = TOKI.state(d.getTime(), tokiPlace);
+      if (tokiSeg !== null && toki.seg !== tokiSeg) {               // a bell: the next toki begins
+        bellAt = performance.now();
+        if (sound.mode !== "off") sound.ringHour(toki.count);
+      }
+      tokiSeg = toki.seg;
+      const b = bellAt === null ? { sute: 0, lit: toki.count } : TOKI.strokes((performance.now() - bellAt) / 1000);
+      toki.sute = b.sute; toki.lit = Math.min(b.lit, toki.count);
+      tokiNow = toki;
+    }
+    const hf = viewer.render(d, ts / 1000, toki);
     if (hf !== undefined && sound.mode !== "off" && viewer.frame % 20 === 0) {
       const k = Math.floor(hf), still = hf - k < 1e-6;
-      sound.update({ k, atPicture: still, scale: name === "twelve-keys" ? "dorian" : "in",
+      sound.update({ k, atPicture: still, scale: name === "twelve-keys" ? "dorian" : "in", noBell: !!toki,
                      profile: sound.mode === "light" ? viewer.profile() : null });
     }
     if (hf !== undefined && viewer.frame % 15 === 0) {
-      cap.textContent = caption(name, viewer.clock, hf, d);
-      clockText.textContent = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + (speed !== 1 ? "  · an hour a minute" : "");
+      cap.textContent = toki ? tokiCaption(toki, hf) : caption(name, viewer.clock, hf, d);
+      clockText.textContent = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        + (toki ? `  · ${toki.sekki[1]} (${toki.sekki[0]})` : "") + (speed !== 1 ? "  · an hour a minute" : "");
     }
     requestAnimationFrame(loop);
   }

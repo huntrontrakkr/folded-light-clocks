@@ -115,6 +115,38 @@ class Sound {
     }
   }
 
+  // a great temple bell (bonsho) struck with a wooden beam: a deep hum, inharmonic partials in slightly detuned pairs
+  // whose slow beating is the voice of these bells, and a soft thud (as caustix.music.bonsho)
+  bonsho(f, when, gain) {
+    const ctx = this.ctx, o = this.out(0, 0.62);
+    for (const [ratio, amp, tau, beat] of [[0.5, 0.55, 11, 0.13], [1, 1, 7.5, 0.31], [1.19, 0.42, 5, 0.47],
+        [1.71, 0.36, 3.8, 0.62], [2.27, 0.3, 2.8, 0.83], [2.93, 0.18, 1.9, 1.1], [3.79, 0.1, 1.2, 1.4], [4.86, 0.06, 0.7, 1.9]]) {
+      for (const sgn of [-1, 1]) {
+        const s = ctx.createOscillator(); s.frequency.value = f * ratio + sgn * beat / 2;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, when);
+        g.gain.linearRampToValueAtTime(gain * amp * 0.045, when + 0.012);
+        g.gain.exponentialRampToValueAtTime(1e-4, when + 5 * tau);
+        s.connect(g).connect(o);
+        s.start(when); s.stop(when + 5 * tau + 0.1);
+      }
+    }
+    const n = Math.floor(0.06 * ctx.sampleRate), buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (0.012 * ctx.sampleRate));
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 260;
+    const tg = ctx.createGain(); tg.gain.value = gain * 0.5;
+    src.connect(lp).connect(tg).connect(o); src.start(when);
+  }
+
+  // the Edo time bell: three sute-gane to call attention, a breath, then the count (timing as TOKI.SUTE / COUNT0 / STEP)
+  ringHour(count) {
+    if (!this.ctx || this.mode === "off") return;
+    const t0 = this.ctx.currentTime + 0.1, f = 110.0;
+    for (const s of TOKI.SUTE) this.bonsho(f, t0 + s, 0.6);
+    for (let i = 0; i < count; i++) this.bonsho(f, t0 + TOKI.COUNT0 + i * TOKI.STEP, 1.0);
+  }
+
   padChord(freqs) {
     const ctx = this.ctx, now = ctx.currentTime;
     if (this.pad) {                                                     // the old chord fades over 12 s
@@ -171,7 +203,7 @@ class Sound {
       this.k = state.k;
       const r = this.k % this.scale.length;
       this.padChord([this.freq(r, -1), this.freq(r + 2, -1), this.freq(r + 3, -1)]);
-      if (!first && state.atPicture) this.bell(this.freq(r, 0), this.ctx.currentTime + 0.05, 1.0);
+      if (!first && state.atPicture && !state.noBell) this.bell(this.freq(r, 0), this.ctx.currentTime + 0.05, 1.0);
     }
     if (this.mode === "light" && state.profile) this.updateLight(state);
   }
